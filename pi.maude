@@ -1,0 +1,1015 @@
+---| Pi Framework, beta
+---| Christiano Braga
+---| August, 2021
+
+fmod STACK{X :: TRIV} is 
+     inc LIST{X} * (op __ to _::_, op nil to empty) .
+     sort Stack{X} .
+     op [_] : List{X} -> Stack{X} . 
+     op [] : -> Stack{X} .
+     op push : Stack{X} X$Elt -> Stack{X} .
+     op pop : Stack{X} -> Stack{X} .
+     op top : Stack{X} ~> X$Elt .
+     var L : List{X} . var E : X$Elt .
+     eq [empty] = [] .
+     eq push([], E) = [E] .
+     eq push([L], E) = [L :: E] .
+     eq pop([]) = [] .
+     eq pop([L :: E]) = [L] .
+     eq top([L :: E]) = E .
+endfm
+
+fmod INDEX is sort Idx . endfm
+view Idx from TRIV to INDEX is sort Elt to Idx . endv
+
+fmod SEM-COMP is sort SemComp . endfm 
+view SemComp from TRIV to SEM-COMP is sort Elt to SemComp . endv
+
+fmod BASIC-PI-IR is 
+     sorts OpCode Statement .
+endfm
+view Statement from TRIV to BASIC-PI-IR is sort Elt to Statement . endv
+
+fmod RECORD{X :: TRIV, Y :: TRIV} is 
+     sorts Field{X, Y} PreRecord{X, Y} Record{X, Y} .
+     subsort Field{X, Y} < PreRecord{X, Y} .
+     op __ : X$Elt Y$Elt ~> Field{X, Y} [prec 20] . 
+     op empty : -> PreRecord{X, Y} .
+     op _,_ : PreRecord{X, Y} PreRecord{X, Y} -> PreRecord{X, Y} 
+                              [prec 40 assoc comm id: empty format(d d nss d)] .
+     op [_] : PreRecord{X, Y} -> Record{X, Y} [format (n s s d)] .
+endfm
+
+fmod PI-AUTOMATON is
+     inc NAT .
+     inc BASIC-PI-IR .
+     inc RECORD{Idx, SemComp} * (sort Record{Idx, SemComp} to State,
+                                 sort PreRecord{Idx, SemComp} to PreState) .
+     sort FinalState .
+     subsort FinalState < State .
+     op δ : State -> State [iter] .
+     op δ* : State -> State .
+     ---| Liberal execution 
+     op exec : Statement -> State .
+     ---| Finite execution
+     op fexe : Statement Nat -> State . 
+     var S : State . var F : FinalState .
+     eq δ*(F) = F .
+     eq δ*(S) = δ*(δ(S)) .
+endfm
+
+fmod CONTROL is
+     sort Control .
+endfm
+view Control from TRIV to CONTROL is sort Elt to Control . endv
+
+fmod VALUE is 
+     sort Value .
+endfm
+view Value from TRIV to VALUE is sort Elt to Value . endv
+
+fmod BASIC-VALUES is 
+     inc VALUE . inc RAT . 
+     inc BOOL . inc STRING .
+     inc FLOAT .
+     op val : Rat -> Value [format(! o)] .
+     op val : Bool -> Value [format(! o)] .
+     op val : String -> Value [format(! o)] .
+     op val : Float -> Value [format(! o)] .
+endfm
+
+fmod EXP-IR is 
+     inc BASIC-PI-IR . inc VALUE .
+     sort Exp .
+     subsort Exp < Statement .
+     op exp : Value -> Exp .
+     ops sum sub mul div lth leq 
+         gth geq equ lor lan : Exp Exp -> Exp [format (y o)] .
+     op not : Exp -> Exp [format (y o)] .
+     op ite : Exp Exp Exp -> Exp [format (y o)] .
+endfm
+
+fmod CONTROL-STACK-COMPONENT is 
+     inc BASIC-PI-IR . inc CONTROL .
+     inc INDEX . inc SEM-COMP .
+     inc STACK{Control} * (op empty to ∅, op [] to ∅) .
+     subsort OpCode < Control .
+     op cnt : -> Idx [format (b! o)] .
+     op :_ : Stack{Control} -> SemComp .
+endfm
+
+fmod VALUE-STACK-COMPONENT is 
+     inc VALUE . inc INDEX .
+     inc SEM-COMP .
+     inc STACK{Value} * (op [] to ∅) .
+     op val : -> Idx [format (b! o)] .
+     op :_ : Stack{Value} -> SemComp .
+endfm
+     
+fmod EXP-AUTOMATON is 
+     inc BOOL . inc EXP-IR .
+     inc PI-AUTOMATON . inc BASIC-VALUES .
+     inc CONTROL-STACK-COMPONENT .
+     inc VALUE-STACK-COMPONENT .
+
+     ops #SUM #MUL #DIV #SUB #LTH #LEQ #ITE
+         #GTH #GEQ #EQU #NOT #LOR #LAN : -> OpCode .
+
+     op cnt : Exp -> Control .
+     op val : Exp -> Value .
+
+     var L : List{Control} . var C : Stack{Control} .
+     var V : Stack{Value} . var M : List{Value} .
+     vars E E₁ E₂ E3 : Exp . var ... : PreState .
+     var U : Value . 
+     vars R R₁ R₂ : Rat . vars F F₁ F₂ : Float .
+     vars B B₁ B₂ : Bool . vars S S₁ S₂ : String .
+
+     ---| Control stack component is a record field.
+     mb (cnt : C) : Field{Idx, SemComp} .
+
+     ---| Value stack component is a record field.
+     mb (val : V) : Field{Idx, SemComp} .
+
+     ---| A final state is reached when the control stack is empty.
+     mb [cnt : (∅).Stack{Control}, ...] : FinalState .
+
+     ---| Basic values
+     eq [value] :
+          δ( [ cnt : [ L :: cnt(exp(U)) ], 
+               val : V , 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : push(V, U), 
+               ... ] .
+
+     ---| ITE
+     eq [ite] : 
+          δ( [ cnt : [ L :: cnt(ite(E₁, E₂, E3)) ],
+               val : V,
+               ... ] ) =
+             [ cnt : push(push([ L ], #ITE), cnt(E₁)),
+               val : push(push(V, val(E3)), val(E₂)),
+               ... ]  . 
+
+     eq [#ITE-true] :
+          δ( [ cnt : [ L :: #ITE ],
+               val : [ M :: val(E3) :: val(E₂) :: val(true) ],
+               ... ] ) =  
+             [ cnt : [ L :: cnt(E₂)],
+               val : [ M ],
+               ... ] .
+
+     eq [#ITE-false] :
+          δ( [ cnt : [ L :: #ITE ],
+               val : [ M :: val(E3) :: val(E₂) :: val(false) ],
+               ... ] ) =  
+             [ cnt : [ L :: cnt(E3)],
+               val : [ M ],
+               ... ] .
+
+     ---| Arithmetic
+     eq [sum] :
+          δ( [ cnt : [ L :: cnt(sum(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #SUM :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+
+     eq [#SUM-Rat] :
+          δ( [ cnt : [ L :: #SUM ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ + R₂) ], 
+               ... ] .
+
+     eq [#SUM-Float] :
+          δ( [ cnt : [ L :: #SUM ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ + F₂) ], 
+               ... ] .
+
+     eq [#SUM-String] : 
+          δ( [ cnt : [ L :: #SUM ], 
+               val : [ M :: val(S₁) :: val(S₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(S₁ + S₂) ], 
+               ... ] .
+
+     eq [sub] :
+          δ( [ cnt : [ L :: cnt(sub(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #SUB :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+
+     eq [#SUB-Rat] : 
+          δ( [ cnt : [ L :: #SUB ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ - R₂) ], 
+               ... ] .
+
+     eq [#SUB-Float] :
+          δ( [ cnt : [ L :: #SUB ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ - F₂) ], 
+               ... ] .
+
+     eq [mul] :
+          δ( [ cnt : [ L :: cnt(mul(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #MUL :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+
+     eq [#MUL-Rat] :
+          δ( [ cnt : [ L :: #MUL ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ * R₂) ], 
+               ... ] .
+
+     eq [#MUL-Float] :
+          δ( [ cnt : [ L :: #MUL ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ * F₂) ], 
+               ... ] .
+
+     eq [div] :
+          δ( [ cnt : [ L :: cnt(div(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #DIV :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+
+     eq [#DIV-Rat] :
+          δ( [ cnt : [ L :: #DIV ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ / R₂) ], 
+               ... ] .
+
+     eq [#DIV-Float] :
+          δ( [ cnt : [ L :: #DIV ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ / F₂) ], 
+               ... ] .
+
+     ---| Logical operators
+     eq [lth] : 
+          δ( [ cnt : [ L :: cnt(lth(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #LTH :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#LTH-Rat] :
+          δ( [ cnt : [ L :: #LTH ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ < R₂) ], 
+               ... ] .
+
+     eq [#LTH-Float] :
+          δ( [ cnt : [ L :: #LTH ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ < F₂) ], 
+               ... ] .
+
+     eq [#LTH-String] :
+          δ( [ cnt : [ L :: #LTH ], 
+               val : [ M :: val(S₁) :: val(S₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(S₁ < S₂) ], 
+               ... ] .
+
+     eq [leq] :
+          δ( [ cnt : [ L :: cnt(leq(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #LEQ :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#LEQ-Rat] :
+          δ( [ cnt : [ L :: #LEQ ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ <= R₂) ], 
+               ... ] .
+
+     eq [#LEQ-Float] :
+          δ( [ cnt : [ L :: #LEQ ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ <= F₂) ], 
+               ... ] .
+
+     eq [#LEQ-String] :
+          δ( [ cnt : [ L :: #LEQ ], 
+               val : [ M :: val(S₁) :: val(S₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(S₁ <= S₂) ], 
+               ... ] .
+
+     eq [gth] :
+          δ( [ cnt : [ L :: cnt(gth(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #GTH :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#GTH-Rat] :
+          δ( [ cnt : [ L :: #GTH ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ > R₂) ], 
+               ... ] .
+
+     eq [#GTH-Float] :
+          δ( [ cnt : [ L :: #GTH ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ > F₂) ], 
+               ... ] .
+
+     eq [#GTH-String] :
+          δ( [ cnt : [ L :: #GTH ], 
+               val : [ M :: val(S₁) :: val(S₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(S₁ > S₂) ], 
+               ... ] .
+
+     eq [geq] :
+          δ( [ cnt : [ L :: cnt(geq(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #GEQ :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#GEQ-Rat] :
+          δ( [ cnt : [ L :: #GEQ ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ >= R₂) ], 
+               ... ] .
+
+     eq [#GEQ-Float] :
+          δ( [ cnt : [ L :: #GEQ ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ >= F₂) ], 
+               ... ] .
+
+     eq [#GEQ-String] :
+          δ( [ cnt : [ L :: #GEQ ], 
+               val : [ M :: val(S₁) :: val(S₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(S₁ >= S₂) ], 
+               ... ] .
+
+     eq [equ] :
+          δ( [ cnt : [ L :: cnt(equ(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #EQU :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#EQU-Rat] :
+          δ( [ cnt : [ L :: #EQU ], 
+               val : [ M :: val(R₁) :: val(R₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(R₁ == R₂) ], 
+               ... ] .
+
+     eq [#EQU-Bool] :
+          δ( [ cnt : [ L :: #EQU ], 
+               val : [ M :: val(B₁) :: val(B₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(B₁ == B₂) ], 
+               ... ] .
+
+     eq [#EQU-Float] : 
+          δ( [ cnt : [ L :: #EQU ], 
+               val : [ M :: val(F₁) :: val(F₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(F₁ == F₂) ], 
+               ... ] .
+
+     eq [#EQU-String] :
+          δ( [ cnt : [ L :: #EQU ], 
+               val : [ M :: val(S₁) :: val(S₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(S₁ == S₂) ], 
+               ... ] .
+     eq [lor] : 
+          δ( [ cnt : [ L :: cnt(lor(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #LOR :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#LOR] :
+          δ( [ cnt : [ L :: #LOR ], 
+               val : [ M :: val(B₁) :: val(B₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(B₁ or B₂) ], 
+               ... ] .
+
+     eq [lan] :
+          δ( [ cnt : [ L :: cnt(lan(E₁, E₂)) ], ... ] ) =
+             [ cnt : [ L :: #LAN :: cnt(E₂) :: cnt(E₁) ] , ... ] .
+
+     eq [#LAN] :
+          δ( [ cnt : [ L :: #LAN ], 
+               val : [ M :: val(B₁) :: val(B₂) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(B₁ and B₂) ], 
+               ... ] .
+
+     eq [not] : 
+          δ( [ cnt : [ L :: cnt(not(E)) ], ... ] ) =
+             [ cnt : [ L :: #NOT :: cnt(E) ] , ... ] .
+
+     eq [#NOT] :
+          δ( [ cnt : [ L :: #NOT ], 
+               val : [ M :: val(B) ], 
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : [ M  :: val(not B) ], 
+               ... ] .
+endfm
+
+fmod ID-IR is 
+     inc QID .
+     inc EXP-IR .
+     sort Id .
+     op id   : Qid -> Id [format (! o)] .
+     op exp : Id -> Exp .
+endfm
+
+view Id from TRIV to ID-IR is sort Elt to Id . endv
+
+fmod BINDABLE is
+     sort Bindable .
+endfm
+view Bindable from TRIV to BINDABLE is sort Elt to Bindable . endv
+
+fmod ENV is 
+     inc MAP{Id, Bindable} * (sort Map{Id, Bindable} to Env, 
+                              op empty to ∅, 
+                              op _|->_ to _↦_) .
+
+     ---| Updates ρ₁ with entries from ρ₂ by overwriting 
+     ---| values of common indices with values from ρ₂,
+     ---| adding entries from ρ₂ which are not common to both,
+     ---| preserving entries from ρ₁ which are not common to both.
+     op update : Env Env -> Env .
+     vars ρ ρ₁ ρ₂ : Env . vars I I₁ I₂ : Id . vars Bnd₁ Bnd₂ : Bindable .  
+     eq update((∅).Env, ρ) = ρ .
+     eq update(ρ, (∅).Env) = ρ .
+     eq update((I₁ ↦ Bnd₁, ρ₁), (I₁ ↦ Bnd₂, ρ₂)) = (I₁ ↦ Bnd₂), update(ρ₁, ρ₂) .
+     eq update((I₁ ↦ Bnd₁, ρ₁), (I₂ ↦ Bnd₂, ρ₂)) = 
+        (I₁ ↦ Bnd₁), (I₂ ↦ Bnd₂), update(ρ₁, ρ₂) [owise] .
+endfm
+
+fmod BASIC-ENV is 
+     inc ENV . inc VALUE .
+     op bnd : Value -> Bindable .
+     op getVal : Bindable -> Value .
+     var V : Value .
+     eq getVal(bnd(V)) = V .
+endfm
+
+fmod ENV-COMPONENT is 
+     inc INDEX . inc SEM-COMP .
+     inc ENV .
+     op env : -> Idx [format (b! o)] .
+     op :_ : Env -> SemComp .
+endfm
+
+fmod EXP-WITH-ID-AUTOMATON is 
+     inc ID-IR . inc BASIC-ENV .
+     inc EXP-AUTOMATON . inc ENV-COMPONENT .
+
+     op val : Id -> Value .
+
+     var ρ : Env . var I : Id .
+     var L : List{Control} . var V : Stack{Value} . 
+     var ... : PreState . 
+
+     ---| Env component is a record field.
+     mb (env : ρ) : Field{Idx, SemComp} .
+
+     eq [id] :
+          δ( [ cnt : [ L :: cnt(exp(I)) ], 
+               val : V , 
+               env : ρ,
+               ... ] ) =
+             [ cnt : [ L ], 
+               val : push(V, getVal(ρ[I])), 
+               env : ρ,
+               ... ] .
+endfm
+
+fmod LOCATION is sort Loc . endfm
+view Loc from TRIV to LOCATION is sort Elt to Loc . endv
+
+fmod LOC-SET is
+     inc SET{Loc} * (op empty to ∅, op _,_ to _;_) . 
+endfm
+
+fmod STORABLE is sort Storable . endfm
+view Storable from TRIV to STORABLE is sort Elt to Storable . endv
+
+fmod STORE is 
+     inc NAT .
+     inc LOC-SET .
+     inc MAP{Loc, Storable} * (sort Map{Loc, Storable} to Store, 
+                               sort Entry{Loc, Storable} to Cell, 
+                               op empty to ∅,
+                               op _|->_ to _↦_) .
+     op loc : Nat -> Loc [format(! o)] .
+     op new : Store -> Loc .
+     op mod : Store Set{Loc} -> Store .
+     op largestLoc : Store -> Nat . 
+     op $largestLoc : Store Nat -> Nat . 
+     var S : Store . vars L N : Nat . var V : Storable .
+     var SL : Set{Loc} . vars O O' : Loc .
+
+     eq largestLoc(S) = $largestLoc(S, 0) .
+     eq $largestLoc((∅).Store, N) = N .
+     eq $largestLoc((loc(L) ↦ V, S), N) = 
+        if L > N then $largestLoc(S, L) else $largestLoc(S, N) fi .
+
+     eq new(S) = loc(largestLoc(S) + 1) .
+
+     eq mod((∅).Store, SL) = (∅).Store .
+     eq mod(S, (∅).Set{Loc}) = S .
+     eq mod((O ↦ V, S), (O' ; SL)) = 
+        if O =/= O' 
+        then ((O ↦ V), mod(S, (O' ; SL)))
+        else mod(S, SL) 
+        fi .
+endfm
+
+fmod BASIC-STORE is 
+     inc STORE . inc BASIC-VALUES .
+     op val : Loc -> Value .
+     op stb : Value -> Storable .
+     op getVal : Storable -> Value .
+     op getLoc : Value -> Loc .
+     var V : Value . var L : Loc .
+     eq getVal(stb(V)) = V .
+     eq getLoc(val(L)) = L .
+endfm
+
+fmod CMD-IR is 
+     inc EXP-IR . inc ID-IR .
+     sort Cmd .
+     op seq : Cmd Cmd -> Cmd [format (g o)] .
+     op assign : Id Exp -> Cmd [format (g o)] . 
+     op print : Exp -> Cmd [format (g o)] . 
+     op cond : Exp Cmd Cmd -> Cmd [format (c o)] .
+     op loop : Exp Cmd -> Cmd [format (g o)] .
+     op ref : Exp -> Exp [format (y o)] .
+     op deref : Id -> Exp [format (y o)] .
+endfm
+
+fmod STORE-COMPONENT is 
+     inc INDEX . inc SEM-COMP .
+     inc STORE . 
+     op sto : -> Idx [format (b! o)] .
+     op :_ : Store -> SemComp .
+endfm
+
+fmod OUTPUT is 
+     inc VALUE .
+     sort Output .
+     subsort Value < Output .
+     op noOutput : -> Output .
+     op _,_ : Output Output -> Output [assoc id: noOutput] .
+endfm
+
+fmod OUTPUT-COMPONENT is 
+     inc OUTPUT . inc INDEX .
+     inc SEM-COMP .
+     op out : -> Idx [format (b! o)] .
+     op :_ : Output -> SemComp .
+endfm
+
+fmod LOC-SET-COMPONENT is 
+     inc LOC-SET .
+     inc INDEX . inc SEM-COMP .
+     op loc : -> Idx [format (b! o)] .
+     op :_ : Set{Loc} -> SemComp .
+endfm
+
+fmod CMD-AUTOMATON is 
+     inc EXP-WITH-ID-AUTOMATON . inc CMD-IR .
+     inc BASIC-STORE . inc STORE-COMPONENT .
+     inc OUTPUT-COMPONENT .
+     inc LOC-SET-COMPONENT .
+
+     ops #ASSIGN #COND #LOOP #REF #PRINT : -> OpCode .
+
+     op cnt : Cmd -> Control .
+     op val : Cmd -> Value .
+
+     var L : List{Control} . var I : Id . vars E E₁ E₂ : Exp . 
+     var V : Stack{Value} . var M : List{Value} . var U : Value .
+     var ρ : Env . var sigma : Store . var ... : PreState .
+     var Loc : Loc . vars C C₁ C₂ : Cmd . var R : Rat . var B : Bool .
+     var O : Output . var SL : Set{Loc} .
+
+     ---| Store semantic component
+     mb (sto : sigma) : Field{Idx, SemComp} .   
+
+     ---| Ouput semantic component
+     mb (out : O) : Field{Idx, SemComp} .   
+
+     ---| Set{Loc} semantic component
+     mb (loc : SL) : Field{Idx, SemComp} .   
+
+     ---| Sequence of commmands
+     eq [seq] :
+          δ( [ cnt : [ L :: cnt(seq(C₁, C₂)) ], 
+               ... ] ) =
+             [ cnt : push(push([ L ], cnt(C₂)), cnt(C₁)),
+               ... ] .          
+
+     ---| Assignment
+     eq [assign] :
+          δ( [ cnt : [ L :: cnt(assign(I, E)) ], 
+               val : V, 
+               ... ] ) =
+             [ cnt : push(push([ L ], #ASSIGN), cnt(E)),
+               val : push(V, val(I)),
+               ... ] .          
+
+     eq [#ASSIGN] :
+          δ( [ cnt : [ L :: #ASSIGN ],
+               val : [ M :: val(I) :: U ],
+               env : ρ,
+               sto : sigma,
+               ... ] ) =  
+             [ cnt : [ L ],
+               val : [ M ],
+               env : ρ,
+               sto : insert(getLoc(getVal(ρ[I])), stb(U), sigma),
+               ... ] .
+
+     ---| Conditional
+     eq [cond] :
+          δ( [ cnt : [ L :: cnt(cond(E, C₁, C₂)) ],
+               val : V,
+               ... ] ) =
+             [ cnt : push(push([ L ], #COND), cnt(E)),
+               val : push(push(V, val(C₂)), val(C₁)),
+               ... ]  . 
+
+     eq [#COND-true] :
+          δ( [ cnt : [ L :: #COND ],
+               val : [ M :: val(C₂) :: val(C₁) :: val(true) ],
+               ... ] ) =  
+             [ cnt : [ L :: cnt(C₁)],
+               val : [ M ],
+               ... ] .
+
+     eq [#COND-false] :
+          δ( [ cnt : [ L :: #COND ],
+               val : [ M :: val(C₂) :: val(C₁) :: val(false) ],
+               ... ] ) =  
+             [ cnt : [ L :: cnt(C₂)],
+               val : [ M ],
+               ... ] .
+
+     ---| Unbounded repetition
+     eq [loop] :
+          δ( [ cnt : [ L :: cnt(loop(E, C)) ],
+               val : V,
+               ... ] ) =
+             [ cnt : push(push([ L ], #LOOP), cnt(E)),
+               val : push(V, val(loop(E, C))),
+               ... ]  . 
+
+     eq [#LOOP-true] : 
+          δ( [ cnt : [ L :: #LOOP ],
+               val : [ M :: val(loop(E, C)) :: val(true) ],
+               ... ] ) =  
+             [ cnt : [ L :: cnt(loop(E, C)) :: cnt(C) ],
+               val : [ M ],
+               ... ] .
+
+     eq [#LOOP-false] :
+          δ( [ cnt : [ L :: #LOOP ],
+               val : [ M :: val(loop(E, C)) :: val(false) ],
+               ... ] ) =  
+             [ cnt : [ L ], 
+               val : [ M ],
+               ... ] .
+
+     ---| References
+     eq [ref] :
+          δ( [ cnt : [ L :: cnt(ref(E)) ],
+               ... ] ) =
+             [ cnt : [ L :: #REF :: cnt(E) ],
+               ... ] .
+
+     eq [#REF] :
+          δ( [ cnt : [ L :: #REF ],
+               val : [ M :: U ], 
+               sto : sigma, 
+               loc : SL,
+               ... ] ) =
+             [ cnt : [ L ],
+               val : push([ M ], val(new(sigma))),
+               sto : insert(new(sigma), stb(U), sigma),
+               loc : (SL ; new(sigma)),
+               ... ] .
+
+     ---| Dereferenciation
+     eq [deref] :
+          δ( [ cnt : [ L :: cnt(deref(I)) ],
+               val : V, 
+               env : ρ,
+               sto : sigma, 
+               ... ] ) =
+             [ cnt : [ L ],
+               val : push(V, getVal(sigma[getLoc(getVal(ρ[I]))])),
+               env : ρ,
+               sto : sigma,
+               ... ] .
+
+     ---| Print
+     eq [print] :
+          δ( [ cnt : [ L :: cnt(print(E)) ],
+               ... ] ) =
+             [ cnt : [ L :: #PRINT :: cnt(E) ],
+               ... ] .
+
+     eq [#PRINT] :
+          δ( [ cnt : [ L :: #PRINT ],
+               val : [ M :: U ], 
+               out : O, 
+               ... ] ) =
+             [ cnt : [ L ],
+               val : [ M ],
+               out : (O, U),
+               ... ] .
+endfm
+
+fmod DEC-IR is 
+     inc ID-IR . inc CMD-IR .
+     sort Dec .
+     subsort Dec < Statement .
+     op dec : Id Exp -> Dec [format (m o)] .
+     op let : Dec Exp -> Exp [format (y o)] .
+     op block : Dec Cmd -> Cmd [format (g o)] .
+endfm
+
+fmod DEC-AUTOMATON is
+     inc DEC-IR . inc CMD-AUTOMATON .
+
+     ops #DEC #LETDEC #LETEXP #BLKDEC #BLKCMD : -> OpCode .
+
+     op cnt : Dec -> Control .
+     op val : Env -> Value .
+     op val : Set{Loc} -> Value .
+
+     var L : List{Control} . var I : Id . vars E E₁ E₂ : Exp . var D : Dec .
+     var V : Stack{Value} . var M : List{Value} . var U : Value .
+     vars ρ ρ₁ ρ₂ : Env . var sigma : Store . var ... : PreState .
+     vars SL SL' : Set{Loc} . vars C C₁ C₂ : Cmd . 
+
+     ---| Declaration
+     eq [dec] :
+          δ( [ cnt : [ L :: cnt(dec(I, E)) ],
+               val : V,
+               ... ] ) =  
+             [ cnt : push(push([ L ], #DEC), cnt(E)), 
+               val : push(V, val(I)),
+               ... ] .
+
+     eq [#DEC] :
+          δ( [ cnt : [ L :: #DEC ],
+               val : [ M :: val(I) :: U ],
+               ... ] ) =  
+             [ cnt : [ L ],
+               val : push([ M ], val(I ↦ bnd(U))),
+               ... ] .
+
+     ---| Let
+     eq [let] : 
+          δ( [ cnt : [ L :: cnt(let(D, E)) ],
+               val : V,
+               ... ] ) = 
+             [ cnt : [ L :: #LETDEC :: cnt(D) ],
+               val : push(V, val(E)),
+               ... ] .
+
+     eq [#LETDEC] :
+          δ( [ cnt : [ L :: #LETDEC ],
+               val : [ M :: val(E) :: val(ρ₂) ],
+               env : ρ₁,
+               ... ] ) = 
+             [ cnt : [ L :: #LETEXP :: cnt(E) ], 
+               val : push([ M ], val(ρ₁)),
+               env : update(ρ₁, ρ₂),
+               ... ] .
+
+     eq [#LETEXP] :
+          δ( [ cnt : [ L :: #LETEXP ],
+               val : [ M :: val(ρ₂) :: U ],
+               env : ρ₁,
+               ... ] ) = 
+             [ cnt : [ L ], 
+               val : [ M :: U ], 
+               env : ρ₂,
+               ... ] .
+
+     ---| Block
+     eq [block] :
+          δ( [ cnt : [ L :: cnt(block(D, C)) ],
+               val : V,
+               loc : SL,
+               ... ] ) = 
+             [ cnt : [ L :: #BLKDEC :: cnt(D) ],
+               val : push(push(V, val(SL)), val(C)),
+               loc : (∅).Set{Loc},
+               ... ] .
+
+     eq [#BLKDEC] :
+          δ( [ cnt : [ L :: #BLKDEC ],
+               val : [ M :: val(C) :: val(ρ₂) ],
+               env : ρ₁,
+               ... ] ) = 
+             [ cnt : [ L :: #BLKCMD :: cnt(C) ], 
+               val : push([ M ], val(ρ₁)),
+               env : update(ρ₁, ρ₂),
+               ... ] .
+
+     eq [#BLKCMD] : 
+          δ( [ cnt : [ L :: #BLKCMD ],
+               val : [ M :: val(SL) :: val(ρ₂) ],
+               env : ρ₁,
+               sto : sigma,
+               loc : SL',
+               ... ] ) = 
+             [ cnt : [ L ], 
+               val : [ M ], 
+               env : ρ₂,
+               sto : mod(sigma, SL'),
+               loc : SL,
+               ... ] .
+endfm
+
+fmod FORMALS is 
+     inc LIST{Id} * (sort List{Id} to Formals, 
+                     sort NeList{Id} to NeFormals, 
+                     op nil to nilFormals) . 
+endfm
+
+view Exp from TRIV to EXP-IR is sort Elt to Exp . endv
+
+fmod ACTUALS is 
+     inc LIST{Exp} * (sort List{Exp} to Actuals, 
+                      sort NeList{Exp} to NeActuals, 
+                      op nil to nilActuals) . 
+endfm
+
+fmod LAMBDA-IR is 
+     inc FORMALS . inc ACTUALS .
+     inc EXP-IR .  inc DEC-IR .
+     sort Abs .    
+     subsort Abs < Exp .
+     op lambda : Formals Exp -> Abs [format (y o)] .
+     op apply : Id Actuals -> Exp [format (y o)] .
+endfm
+
+fmod MATCH is
+     inc FORMALS . inc VALUE-STACK-COMPONENT .
+     inc BASIC-ENV .
+
+     op match : Formals List{Value} ~> Env .
+     op $match : Formals List{Value} -> Env .
+     var F : Formals . var L : List{Value} . var I : Id . var V : Value .
+     ceq match(F, L) = $match(F, L) if size(F) == size(L) .
+     eq $match(nilFormals, empty) = ∅ .
+     eq $match((I F), (V :: L)) = I ↦ bnd(V), match(F, L) .
+endfm
+
+fmod ABS-AUTOMATON is 
+     inc LAMBDA-IR . inc DEC-AUTOMATON . 
+     inc BASIC-ENV . inc MATCH .
+
+     sort Clos .
+     op closure : Env Formals Exp -> Clos .
+     op val : Clos -> Value .
+     ops #APPLY #ENDAPPLY : -> OpCode .
+     op $mkControl : Actuals -> List{Control} .
+
+     var L : List{Control} . var U : Value .
+     var F : Formals . var E : Exp . var V : Stack{Value} . 
+     vars ρ ρ₁ ρ₂ : Env . var ... : PreState .
+     var I : Id . var A : Actuals . vars M M₁ M₂ : List{Value} .
+
+     eq $mkControl(nilActuals) = (∅).List{Control} .
+     eq $mkControl((E A)) = cnt(E) :: $mkControl(A) .
+
+     eq [lambda] :
+          δ( [ cnt : [ L :: cnt(lambda(F, E)) ], val : V, env : ρ, ... ] ) = 
+             [ cnt : [ L ], val : push(V, val(closure(ρ, F, E))), env : ρ, ... ] .
+
+     eq [apply] :
+          δ( [ cnt : [ L :: cnt(apply(I, A))], val : V, env : ρ, ... ] ) = 
+             [ cnt : [ L :: #APPLY :: $mkControl(A) ], 
+               val : push(V, getVal(ρ[I])), 
+               env : ρ, ... ] .
+
+     eq [#APPLY] :
+          δ( [ cnt : [ L :: #APPLY ], 
+               val : [ M₁ :: val(closure(ρ₂, F, E)) :: M₂ ], 
+               env : ρ₁, 
+               ... ] ) = 
+             [ cnt : [ L :: #ENDAPPLY :: cnt(E) ], 
+               val : [ M₁ :: val(ρ₁) ], 
+               env : update(ρ₂, match(F, M₂)), ... ] .
+
+     eq [#ENDAPPLY] :
+          δ( [ cnt : [ L :: #ENDAPPLY ], 
+               val : [ M :: val(ρ₂) :: U ], 
+               env : ρ₁, 
+               ... ] ) = 
+             [ cnt : [ L ], 
+               val : [ M :: U ], 
+               env : ρ₂, ... ] .
+endfm
+
+fmod REC-IR is
+     inc LAMBDA-IR . inc ACTUALS .
+     op rec : Id Abs -> Dec [format (m o)] .
+     op recapp : Id Actuals -> Exp [format (y o)] .
+endfm
+
+fmod REC-ABS-AUTOMATON is
+     inc ABS-AUTOMATON . inc REC-IR .
+
+     sort Reclos .
+     op reclosure : Formals Exp Env Env -> Reclos .
+     op val : Reclos -> Value .
+     op unfold : Env -> Env .
+     op reclose : Env Env -> Env .
+     op #RECAPP : -> OpCode .
+
+     vars ρ ρ₁ ρ₂ ρ₃ : Env .
+     var F : Formals . var E : Exp .
+     var I : Id . var U : Value .
+     var L : List{Control} . var V : Stack{Value} .
+     vars M M₁ M₂ : List{Value} . var A : Actuals .
+     var ... : PreState .
+
+     eq unfold(ρ) = reclose(ρ, ρ) .
+     eq reclose(ρ₁, I ↦ bnd(val(closure(ρ₂, F, E)))) =
+        I ↦ bnd(val(reclosure(F, E, ρ₂, ρ₁))) .
+     eq reclose(ρ₁, I ↦ bnd(val(reclosure(F, E, ρ₂, ρ₃)))) = 
+        I ↦ bnd(val(reclosure(F, E, ρ₂, ρ₁))) .
+     eq reclose(ρ, (ρ₁ , ρ₂)) = reclose(ρ, ρ₁) , reclose(ρ, ρ₂) .
+     eq reclose(ρ, ∅) = ∅ .
+     eq reclose(ρ, I ↦ bnd(U)) = I ↦ bnd(U) [owise] .
+
+     eq [rec] : 
+          δ( [ cnt : [ L :: cnt(rec(I, lambda(F, E))) ], 
+               val : V, 
+               env : ρ, 
+               ... ] ) = 
+             [ cnt : [ L ], 
+               val : push(V, val(unfold(I ↦ bnd(val(closure(ρ, F, E)))))),
+               env : ρ, 
+               ... ] . 
+
+     eq [recapp] :
+          δ( [ cnt : [ L :: cnt(recapp(I, A))], val : V, env : ρ, ... ] ) = 
+             [ cnt : [ L :: #RECAPP :: $mkControl(A) ], 
+               val : push(V, getVal(ρ[I])), 
+               env : ρ, 
+               ... ] .
+
+     eq [#RECAPP] :
+          δ( [ cnt : [ L :: #RECAPP ], 
+               val : [ M₁ :: val(reclosure(F, E, ρ₁, ρ₂)) :: M₂ ], 
+               env : ρ₃, 
+               ... ] ) = 
+             [ cnt : [ L :: #ENDAPPLY :: cnt(E) ], 
+               val : [ M₁ :: val(ρ₃) ], 
+               env : update(ρ₁, update(unfold(ρ₂), match(F, M₂))), 
+               ... ] .
+endfm
+
+fmod PI-IR is inc BASIC-VALUES . inc EXP-IR . inc CMD-IR . inc DEC-IR . inc LAMBDA-IR . inc REC-IR . endfm

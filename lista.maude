@@ -1,0 +1,13 @@
+fmod PEANO is
+     sort Natural .
+     op 0 : -> Natural .
+     op suc : Natural -> Natural [iter] .
+endfm
+
+fmod PEANO-LIST is
+     inc PEANO .
+     sort NatList .
+     subsort Natural < NatList .
+     op nilNatList : -> NatList .
+     op _,_ : NatList NatList -> NatList [assoc id: nilNatList] .
+endfm
