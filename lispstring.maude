@@ -1,0 +1,22 @@
+fmod LISPSTRING is
+    protecting STRING .
+    sorts NeList List .
+    subsorts String < List .
+---| Construtores pétreos
+    op nil : -> List [ctor] .
+    op _,_ : List List -> List [ctor assoc id: nil] .
+---| declarando as operações básicas de listas de strings
+    op cons : List String -> List .
+    op car : List -> String .
+    op cdr : List -> List .
+---| Head = primeiro da lista, Tail = resto da lista
+---| operações são similares a LISP , car cons e cdr
+    var Head : String .
+    var Tail : List .
+    eq cdr(Tail , Head) = Tail .
+    eq car(Tail , Head) = Head .
+    eq cons(Tail , Head) = Tail , Head .
+endfm
+
+red cons(cdr("1111","30303030","22222") ,car( "aaaa" , "bbbb" ) ) .
+quit

@@ -36,9 +36,7 @@ fmod FUN-GRM is
      inc FLOAT .
      inc STRING .
      inc BOOL .
-     inc FORMALS .
-     inc ACTUALS .
-     sorts Expr Idn Val .
+     sorts Expr Idn Val Idn* Expr*.
      subsort Idn Val < Expr .  
      op idn : Qid -> Idn .
      op rat : Rat -> Val .
@@ -48,12 +46,8 @@ fmod FUN-GRM is
      ops _+_ _*_ _-_ _/_ _==_ _<_ _<=_ _>_ _>=_ _or_ _and_ : Expr Expr -> Expr [gather(E e) prec 20] .
      op ~_ : Expr -> Expr .
      op if_then_else_ : Expr Expr Expr -> Expr [prec 40] .
-     op fun_(_) =_ : Idn Idn Expr -> Expr [prec 50] .
-     ---| suporta formais agora tambem
-     op fun_(_) =_ : Idn Formals Expr -> Expr [prec 50].
-     op _(_) : Idn Expr -> Expr [prec 10] .
-     ---| suporta actuais agora tambem
-     op _(_) : Idn Actuals -> Expr [prec 10] .
+     op fun_(_) =_ : Idn Idn* Expr -> Expr [prec 50] .
+     op _(_) : Idn Expr* -> Expr [prec 10] .
      op _,_ : Expr Expr -> Expr [prec 60 assoc] .
  endfm 
 
@@ -75,25 +69,19 @@ fmod FUN-TRAN2 is
      inc BASIC-VALUES .
      inc ID-IR .
      inc REC-IR .
-     inc FORMALS .
 
      op compileIdn : Idn -> Id .
      var Q : Qid .
      eq compileIdn(idn(Q)) = id(Q) .
 
-
      op compileExpr : Expr -> Statement .
 
      var R : Rat . var F : Float . var S : String . var B : Bool .
      vars E E1 E2 E3 : Expr .
-     var I I1 I2 : Idn .
+     var I I1 I2 : Idn . 
 
-    ---| formais nada mais é do que uma lista de ids
-     var Fo : Formals .
-     ---| bem como actuals que nada mais é do que uma lista de expressoes
-     var Act : Actuals .
 
-    ---|portanto....
+
 
      eq compileExpr(rat(R)) = exp(val(R)) .
      eq compileExpr(flo(F)) = exp(val(F)) .
@@ -117,36 +105,16 @@ fmod FUN-TRAN2 is
      eq compileExpr(if E1 then E2 else E3) = 
         ite(compileExpr(E1), compileExpr(E2), compileExpr(E3)) .
 
-
-    ---| atualmente recbe na declaração só um id
      eq compileExpr(fun I1 (I2) = E) = compileDec(fun I1 (I2) = E) .
 
-    ---| agora pode receber na declaração uma lista de ids que é na verdade formals
-     eq compileExpr(fun I1 (Fo) = E) = compileDec(fun I1 (Fo) = E) .
-
-    ---| antes na hora de chamar, recebe na declaração só uma expressão
      eq compileExpr(I(E)) = recapp(compileIdn(I), compileExpr(E)) .
 
-    ---| agora na hora de chamar , recebe na declaração um actuals, mas...
----|     eq compileExpr(Act) = compileExpr(a  . #como vou quebrar esse actuals pra tratar????
-     eq compileExpr(I(Act)) = recapp(compileIdn(I), Act) .
----|     eq compileExpr(Act)=Act .
-
-     ---| antes a compilação da expressão so suportava um id
      eq compileExpr((fun I1 (I2) = E1, E2)) = 
         let(compileDec(fun I1 (I2) = E1), compileExpr(E2)) .
-
-    ---| agora também suporta formais
-     eq compileExpr((fun I1 (Fo) = E1, E2)) =
-        let(compileDec(fun I1 (Fo) = E1), compileExpr(E2)) .
-
 
      op compileDec : Expr -> Dec .
      eq compileDec(fun I1 (I2) = E) = 
         rec(compileIdn(I1), lambda(compileIdn(I2), compileExpr(E))) . 
-
-
-
 endfm
 
 fmod FUN-RUN-TIME is 
@@ -180,5 +148,3 @@ fmod FUN-RUN-TIME is
      eq pp(val(F)) = string(F) .
      eq pp(val(S)) = S .
 endfm
-
-
