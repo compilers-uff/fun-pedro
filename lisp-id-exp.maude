@@ -1,0 +1,35 @@
+---| módulo maude auxiliar com funções e definições de listas para Expressões e Identificadores
+---| essenciais para o processamento de funções com vários parâmetros
+
+sload pi
+sload basic-lex
+
+
+---| DEFINIÇÃO DO TIPO LISTA DE EXPRESSÕES E IDENTIFICADORES
+fmod LISPIDEXP is
+     inc QID .
+     inc RAT .
+     inc FLOAT .
+     inc STRING .
+     inc BOOL .
+     sorts Expr Idn Val .
+     sorts List .
+     ---| ids valores e expressões devem ser subtipos de lista para que seja suportavel
+     subsort Idn Val < Expr < List  .
+     op idn : Qid -> Idn .
+    ---| operações basicas LISP associadas à expressões e identificadores
+    ---| car1 é o car para ids e o car2 pra expresões
+     op nil : -> List [ctor] .
+     op _;_ : List List -> List [ctor assoc id: nil] .
+     op car₁ : List -> Idn .
+     op car₂ : List -> Expr .
+     op cdr : List -> List .
+     var Tail : List .
+     var HeadId : Idn .
+     var HeadExp : Expr .
+     eq car₁(HeadId ; Tail ) = HeadId .
+     eq car₂(HeadExp ; Tail  ) = HeadExp .
+     eq cdr(HeadExp ; Tail) = Tail .
+     eq cdr(HeadId ; Tail) = Tail .
+ endfm
+---| DEFINIÇÃO DO TIPO LISTA DE EXPRESSÕES E IDENTIFICADORES

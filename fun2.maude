@@ -1,20 +1,22 @@
 sload pi
 sload basic-lex
+sload lisp-id-exp
 
-fmod FUN-LEX is 
+fmod FUN-LEX is
+    ---| ANALISADOR LÉXICO DO FUN
      inc LEXICAL .
      inc BASIC-LEX .
-
-     eq keywords = ('fun '`( '`) '= '`, '~ '+ '- '* '/ '>= '> '<= '< '== 'or 'and 'if 'then 'else) .
+    ---|suporte à palavra reservada ; que delimita os parametros de função
+     eq keywords = ('fun '`( '`) '= '`, '~ '+ '- '* '/ '>= '> '<= '< '== 'or 'and 'if 'then 'else ';) .
      eq ignore = nil .
 
      var Q : Qid .
      eq $lexQid(Q) =
-        if ignore?(Q) then nil  
+        if ignore?(Q) then nil
         else if isRat(Q) then mkRat(Q)
         else if isString(Q) then mkString(Q)
         else if isFloat(Q) then mkFloat(Q)
-        else mkIdn(Q) 
+        else mkIdn(Q)
         fi fi fi fi .
 
      op mkRat : Qid -> Qid .
@@ -30,34 +32,34 @@ fmod FUN-LEX is
      eq mkIdn(Q) = tokenize("idn('" + printTokens(Q) + ")") .
 endfm
 
+
 fmod FUN-GRM is
+    ---| ANALISADOR SINTÁTICO DO FUN
      inc QID .
      inc RAT .
      inc FLOAT .
      inc STRING .
      inc BOOL .
-     inc FORMALS .
-     inc ACTUALS .
-     sorts Expr Idn Val .
-     subsort Idn Val < Expr .  
+     inc LISPIDEXP .
+     subsort Idn Val < Expr < List  .
      op idn : Qid -> Idn .
      op rat : Rat -> Val .
      op flo : Float -> Val .
-     op str : String -> Val . 
+     op str : String -> Val .
      op boo : Bool -> Val .
      ops _+_ _*_ _-_ _/_ _==_ _<_ _<=_ _>_ _>=_ _or_ _and_ : Expr Expr -> Expr [gather(E e) prec 20] .
      op ~_ : Expr -> Expr .
      op if_then_else_ : Expr Expr Expr -> Expr [prec 40] .
-     op fun_(_) =_ : Idn Idn Expr -> Expr [prec 50] .
-     ---| suporta formais agora tambem
-     op fun_(_) =_ : Idn Formals Expr -> Expr [prec 50].
-     op _(_) : Idn Expr -> Expr [prec 10] .
-     ---| suporta actuais agora tambem
-     op _(_) : Idn Actuals -> Expr [prec 10] .
+     ---| definicao de função suporta uma lista de identificadores agora também
+     op fun_(_) =_ : Idn  List  Expr -> Expr [prec 50] .
+     ---| chamada de função suporta uma lista de expressões agora também
+     op _(_) : Idn List -> Expr [prec 10] .
      op _,_ : Expr Expr -> Expr [prec 60 assoc] .
- endfm 
+ endfm
 
-fmod FUN-PARSER is 
+
+fmod FUN-PARSER is
+    ---|PARSER DO FUN
      inc FUN-LEX .
      inc FUN-GRM .
      inc META-LEVEL * (op id to ml-id) .
@@ -66,34 +68,31 @@ fmod FUN-PARSER is
      op $errorExpr : ~> Expr .
      var S : String .
      eq parse(S) = downTerm(getTerm(
-                    metaParse(upModule('FUN-GRM, false), lex(S), 'Expr)), $errorExpr) . 
-     eq parseToTerm(S) = metaParse(upModule('FUN-GRM, false), lex(S), 'Expr) . 
+                    metaParse(upModule('FUN-GRM, false), lex(S), 'Expr)), $errorExpr) .
+     eq parseToTerm(S) = metaParse(upModule('FUN-GRM, false), lex(S), 'Expr) .
 endfm
 
 fmod FUN-TRAN2 is
+    ---| GERADOR DE CODIGO INTERMEDIARIO Π (Π-DENOTAÇÕES)
      inc FUN-GRM .
      inc BASIC-VALUES .
      inc ID-IR .
      inc REC-IR .
      inc FORMALS .
-
+     inc ACTUALS .
+     ---| importando as definições de listas de expressoes e ids
+     inc LISPIDEXP .
      op compileIdn : Idn -> Id .
      var Q : Qid .
      eq compileIdn(idn(Q)) = id(Q) .
-
 
      op compileExpr : Expr -> Statement .
 
      var R : Rat . var F : Float . var S : String . var B : Bool .
      vars E E1 E2 E3 : Expr .
-     var I I1 I2 : Idn .
-
-    ---| formais nada mais é do que uma lista de ids
-     var Fo : Formals .
-     ---| bem como actuals que nada mais é do que uma lista de expressoes
-     var Act : Actuals .
-
-    ---|portanto....
+     var I I1 I2 I3 : Idn .
+     ---| Podem ser listas de expresões ou ids
+     var argumentos : List .
 
      eq compileExpr(rat(R)) = exp(val(R)) .
      eq compileExpr(flo(F)) = exp(val(F)) .
@@ -114,49 +113,46 @@ fmod FUN-TRAN2 is
      eq compileExpr(E1 and E2) = lan(compileExpr(E1), compileExpr(E2)) .
      eq compileExpr(~ E) = not(compileExpr(E)) .
 
-     eq compileExpr(if E1 then E2 else E3) = 
+     eq compileExpr(if E1 then E2 else E3) =
         ite(compileExpr(E1), compileExpr(E2), compileExpr(E3)) .
 
+    ---| agora pode receber na declaração uma lista de ids que nada mais é do que FORMAIS
+     eq compileExpr(fun I1 (argumentos) = E) = compileDec(fun I1 (argumentos) = E) .
 
-    ---| atualmente recbe na declaração só um id
-     eq compileExpr(fun I1 (I2) = E) = compileDec(fun I1 (I2) = E) .
+    ---| agora na hora de chamar, pode receber uma lista de expressões que nada mais é do que ATUAIS
+     eq compileExpr(I(argumentos)) = recapp(compileIdn(I), ẞ₂(argumentos)) .
 
-    ---| agora pode receber na declaração uma lista de ids que é na verdade formals
-     eq compileExpr(fun I1 (Fo) = E) = compileDec(fun I1 (Fo) = E) .
+    ---| agora na hora de compilar a declaração , pode receber uma lista de ids
+     eq compileExpr((fun I1 (argumentos) = E1, E2)) =
+        let(compileDec(fun I1 (argumentos) = E1), compileExpr(E2)) .
 
-    ---| antes na hora de chamar, recebe na declaração só uma expressão
-     eq compileExpr(I(E)) = recapp(compileIdn(I), compileExpr(E)) .
-
-    ---| agora na hora de chamar , recebe na declaração um actuals, mas...
----|     eq compileExpr(Act) = compileExpr(a  . #como vou quebrar esse actuals pra tratar????
-     eq compileExpr(I(Act)) = recapp(compileIdn(I), Act) .
----|     eq compileExpr(Act)=Act .
-
-     ---| antes a compilação da expressão so suportava um id
-     eq compileExpr((fun I1 (I2) = E1, E2)) = 
-        let(compileDec(fun I1 (I2) = E1), compileExpr(E2)) .
-
-    ---| agora também suporta formais
-     eq compileExpr((fun I1 (Fo) = E1, E2)) =
-        let(compileDec(fun I1 (Fo) = E1), compileExpr(E2)) .
-
-
+    ---| agora na hora de compilar a chamada, pode receber uma lista de expressões
      op compileDec : Expr -> Dec .
-     eq compileDec(fun I1 (I2) = E) = 
-        rec(compileIdn(I1), lambda(compileIdn(I2), compileExpr(E))) . 
+     eq compileDec(fun I1 (argumentos) = E) =
+        rec(compileIdn(I1), lambda(ẞ₁(argumentos) , compileExpr(E))) .
 
+    ---| OPERADORES ESZETT (ẞ) tratam as listas e as transformam em ou Formais ou Atuais seguido da compilação do restante do código
+     op ẞ₂ : List -> Actuals .
+     op ẞ₁ : List ->  Formals .
+     eq ẞ₂(argumentos) =  if cdr(argumentos) == nil then compileExpr(car₂(argumentos))
+                                                       else  ẞ₂(cdr(argumentos)) compileExpr(car₂(argumentos))
+                             fi .
 
+     eq ẞ₁(argumentos) = if cdr(argumentos) == nil then compileIdn(car₁(argumentos))
+                                                 else  compileIdn(car₁(argumentos)) ẞ₁(cdr(argumentos))
+                           fi .
+    ---| OPERADORES ESZETT (ẞ)
 
 endfm
 
-fmod FUN-RUN-TIME is 
+fmod FUN-RUN-TIME is
      inc FUN-LEX .
-     inc FUN-PARSER . 
-     inc FUN-TRAN2 . 
+     inc FUN-PARSER .
+     inc FUN-TRAN2 .
      inc REC-ABS-AUTOMATON .
      inc CONVERSION .
      inc NAT .
-     
+
      op exec : Exp -> State .
      op fexe : Exp Nat -> State .
      op comp : Expr -> Exp .
@@ -165,13 +161,13 @@ fmod FUN-RUN-TIME is
      op initCtx : -> PreState .
 
      op getRat : Value -> Rat .
-     var E : Expr . var Epi : Exp . var V : Stack{Value} . var ... : PreState . 
+     var E : Expr . var Epi : Exp . var V : Stack{Value} . var ... : PreState .
      var R : Rat . var S : String . var F : Float . var N : Nat .
 
      eq comp(E) = compileExpr(E) .
      eq initCtx = val : (∅).Stack{Value}, env : (∅).Env .
 
-     eq exec(Epi) = 
+     eq exec(Epi) =
         δ*( [cnt : [cnt(Epi)], initCtx] ) .
 
      eq out([val : V, ...]) = top(V) .
@@ -180,5 +176,3 @@ fmod FUN-RUN-TIME is
      eq pp(val(F)) = string(F) .
      eq pp(val(S)) = S .
 endfm
-
-
