@@ -132,15 +132,15 @@ fmod FUN-TRAN2 is
         rec(compileIdn(I1), lambda(ẞ₁(argumentos) , compileExpr(E))) .
 
     ---| OPERADORES ESZETT (ẞ) tratam as listas e as transformam em ou Formais ou Atuais seguido da compilação do restante do código
-     op ẞ₂ : List -> Actuals .
      op ẞ₁ : List ->  Formals .
+     eq ẞ₁(argumentos) = if cdr(argumentos) == nil then compileIdn(car₁(argumentos))
+                                                 else  compileIdn(car₁(argumentos)) ẞ₁(cdr(argumentos))
+                           fi .
+     op ẞ₂ : List -> Actuals .
      eq ẞ₂(argumentos) =  if cdr(argumentos) == nil then compileExpr(car₂(argumentos))
                                                        else  ẞ₂(cdr(argumentos)) compileExpr(car₂(argumentos))
                              fi .
 
-     eq ẞ₁(argumentos) = if cdr(argumentos) == nil then compileIdn(car₁(argumentos))
-                                                 else  compileIdn(car₁(argumentos)) ẞ₁(cdr(argumentos))
-                           fi .
     ---| OPERADORES ESZETT (ẞ)
 
 endfm
